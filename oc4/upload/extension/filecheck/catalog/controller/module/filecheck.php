@@ -63,15 +63,46 @@ class Filecheck extends \Opencart\System\Engine\Controller {
         $order_id = (int)$output;
         if (!$order_id) return;
 
+        $order_data = $args[0] ?? [];
+        $this->saveOrderJobs($order_id, $order_data);
+    }
+
+    public function eventOrderEdit(string &$route, array &$args, mixed &$output): void {
+        $order_id = (int)($args[0] ?? 0);
+        if (!$order_id) return;
+
+        $order_data = $args[1] ?? [];
+        $this->saveOrderJobs($order_id, $order_data);
+    }
+
+    private function saveOrderJobs(int $order_id, array $order_data): void {
         $jobs = (array)($this->session->data['filecheck_jobs'] ?? []);
         if (empty($jobs)) return;
 
-        $order_data = $args[0] ?? [];
-        $products   = (array)($order_data['products'] ?? []);
+        $products = (array)($order_data['products'] ?? []);
+        $line_items = [];
 
         foreach ($products as $product) {
             $product_id = (int)($product['product_id'] ?? 0);
             if (!$product_id || empty($jobs[$product_id])) continue;
+
+            $line_items[] = [
+                'productId' => (string)$product_id,
+                'name'      => $product['name']     ?? '',
+                'quantity'  => (int)($product['quantity'] ?? 1),
+                'total'     => (float)($product['total']  ?? 0),
+                'jobId'     => $jobs[$product_id],
+            ];
+
+            $existing = $this->db->query(
+                "SELECT `id` FROM `" . DB_PREFIX . "filecheck_order_job`
+                 WHERE `order_id` = '" . $order_id . "'
+                   AND `product_id` = '" . $product_id . "'
+                   AND `job_id` = '" . $this->db->escape($jobs[$product_id]) . "'
+                 LIMIT 1"
+            );
+
+            if ($existing->num_rows) continue;
 
             $this->db->query("
                 INSERT INTO `" . DB_PREFIX . "filecheck_order_job`
@@ -81,30 +112,17 @@ class Filecheck extends \Opencart\System\Engine\Controller {
             ");
         }
 
+        if (empty($line_items)) return;
+
         // Sync to Filecheck API
         $this->load->model('setting/setting');
         $s       = $this->model_setting_setting->getSetting('module_filecheck');
         $sk      = $s['module_filecheck_secret_key'] ?? '';
         $api_url = $s['module_filecheck_api_url']    ?? 'https://api.filecheck.io';
-        if (empty($sk)) return;
+        if (!empty($sk)) {
+            require_once DIR_EXTENSION . 'filecheck/system/library/filecheck_api.php';
+            $api = new \FilecheckApi($api_url, $sk);
 
-        require_once DIR_EXTENSION . 'filecheck/system/library/filecheck_api.php';
-        $api        = new \FilecheckApi($api_url, $sk);
-        $line_items = [];
-
-        foreach ($products as $product) {
-            $product_id = (int)($product['product_id'] ?? 0);
-            if (empty($jobs[$product_id])) continue;
-            $line_items[] = [
-                'productId' => (string)$product_id,
-                'name'      => $product['name']     ?? '',
-                'quantity'  => (int)($product['quantity'] ?? 1),
-                'total'     => (float)($product['total']  ?? 0),
-                'jobId'     => $jobs[$product_id],
-            ];
-        }
-
-        if (!empty($line_items)) {
             $api->syncOrder($order_id, [
                 'orderId'  => (string)$order_id,
                 'status'   => 'pending',
@@ -141,8 +159,6 @@ class Filecheck extends \Opencart\System\Engine\Controller {
             }
             if ($job_id) {
                 $this->session->data['filecheck_jobs'][$product_id] = preg_replace('/[^a-zA-Z0-9_\-]/', '', $job_id);
-            } else {
-                unset($this->session->data['filecheck_jobs'][$product_id]);
             }
             $json['success'] = true;
         }

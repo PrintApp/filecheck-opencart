@@ -6,6 +6,7 @@
 
     // ── localStorage resume helpers ───────────────────────────────────────────
     var STORE_KEY = 'fc_job_' + cfg.productId;
+    var currentJobId = null;
 
     function getStoredJobId() {
         try { return localStorage.getItem(STORE_KEY) || null; } catch (e) { return null; }
@@ -19,15 +20,18 @@
 
     // ── Save jobId to PHP session via AJAX ────────────────────────────────────
     function saveJobIdToSession(jobId) {
+        if (!jobId) return Promise.resolve();
+
         var body = new URLSearchParams({
             nonce:      cfg.nonce,
             product_id: cfg.productId,
-            job_id:     jobId || '',
+            job_id:     jobId,
         });
-        fetch(cfg.saveJobUrl, {
+        return fetch(cfg.saveJobUrl, {
             method:      'POST',
             credentials: 'same-origin',
             body:        body,
+            keepalive:   true,
         }).catch(function (err) {
             console.warn('[Filecheck OC] Session save failed:', err);
         });
@@ -55,12 +59,13 @@
         slot    = document.createElement('div');
         slot.id = id;
         slot.className = 'fc-slot-wrapper';
+        slot.style.marginBottom = '1rem';
 
-        if (btn && btn.parentNode) {
+        var form = document.getElementById('form-product') || document.querySelector('form.product-form');
+        if (form) {
+            form.prepend(slot);
+        } else if (btn && btn.parentNode) {
             btn.parentNode.insertBefore(slot, btn);
-        } else {
-            var form = document.getElementById('form-product') || document.querySelector('form.product-form');
-            if (form) form.appendChild(slot);
         }
         return slot;
     }
@@ -70,25 +75,30 @@
         if (!slot) return;
 
         whenReady().then(function () {
-            var fcOpts = {};
-            if (cfg.agentId) fcOpts.agentId = cfg.agentId;
-
-            var fc      = window.Filecheck(cfg.publishableKey, fcOpts);
-            var elOpts  = {
+            var config = {
+                ...(window?.FILECHECK_CONFIG || {}),
+                publishableKey:     cfg.publishableKey,
                 workflowId:         cfg.workflowId,
-                cartButtonSelector: '#button-cart',
+                mountSelector:      `#fc-slot-${cfg.productId}`,
+                agentId:            cfg.agentId || null,
             };
-            if (cfg.connectorId) elOpts.connectorId = cfg.connectorId;
+            if (cfg.connectorId) config.connectorId = cfg.connectorId;
 
+            // Resume a previous job if the customer refreshes the page
             var resumeJobId = getStoredJobId();
-            if (resumeJobId) elOpts.jobId = resumeJobId;
+            if (resumeJobId) {
+                currentJobId = resumeJobId;
+                config.jobId = resumeJobId;
+            }
 
-            var el = fc.elements.create('intake', elOpts);
-            el.mount('#' + slot.id);
+            var el = window.Filecheck.mount(config);
 
             el.on('status', function (e) {
-                storeJobId(e.jobId || null);
-                saveJobIdToSession(e.jobId || null);
+                if (!e.jobId) return;
+
+                currentJobId = e.jobId;
+                storeJobId(e.jobId);
+                saveJobIdToSession(e.jobId);
             });
 
             el.on('error', function (err) {
@@ -98,6 +108,7 @@
             var btn = document.getElementById('button-cart') || document.querySelector('.btn-cart');
             if (btn) {
                 btn.addEventListener('click', function () {
+                    saveJobIdToSession(currentJobId || getStoredJobId());
                     storeJobId(null);
                 }, { once: true });
             }

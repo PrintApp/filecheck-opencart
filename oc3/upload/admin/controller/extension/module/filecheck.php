@@ -19,7 +19,8 @@ class ControllerExtensionModuleFilecheck extends Controller {
             'filecheck_order_status',
             'filecheck_order_info',
             'filecheck_footer',
-            'filecheck_order_add'
+            'filecheck_order_add',
+            'filecheck_order_edit'
         ];
         $need_reinstall = false;
         foreach ($expected_events as $code) {
@@ -358,6 +359,19 @@ class ControllerExtensionModuleFilecheck extends Controller {
         $this->load->model('setting/event');
         $this->model_extension_module_filecheck->install();
 
+        // Delete existing events first to prevent duplicate registrations
+        foreach ([
+            'filecheck_add_product',
+            'filecheck_edit_product',
+            'filecheck_order_status',
+            'filecheck_order_info',
+            'filecheck_footer',
+            'filecheck_order_add',
+            'filecheck_order_edit'
+        ] as $code) {
+            $this->model_setting_event->deleteEventByCode($code);
+        }
+
         // Admin events
         $this->model_setting_event->addEvent('filecheck_add_product',    'admin/model/catalog/product/addProduct/after',          'extension/module/filecheck/eventAddProduct');
         $this->model_setting_event->addEvent('filecheck_edit_product',   'admin/model/catalog/product/editProduct/after',         'extension/module/filecheck/eventEditProduct');
@@ -367,6 +381,7 @@ class ControllerExtensionModuleFilecheck extends Controller {
         // Catalog events
         $this->model_setting_event->addEvent('filecheck_footer',         'catalog/view/common/footer/after',                      'extension/module/filecheck/eventInjectFooter');
         $this->model_setting_event->addEvent('filecheck_order_add',      'catalog/model/checkout/order/addOrder/after',           'extension/module/filecheck/eventOrderAdd');
+        $this->model_setting_event->addEvent('filecheck_order_edit',     'catalog/model/checkout/order/editOrder/after',          'extension/module/filecheck/eventOrderEdit');
     }
 
     public function uninstall() {
@@ -378,6 +393,7 @@ class ControllerExtensionModuleFilecheck extends Controller {
             'filecheck_order_info',
             'filecheck_footer',
             'filecheck_order_add',
+            'filecheck_order_edit'
         ] as $code) {
             $this->model_setting_event->deleteEventByCode($code);
         }

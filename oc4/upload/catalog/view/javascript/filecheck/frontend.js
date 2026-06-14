@@ -6,6 +6,7 @@
 
     // ── localStorage resume helpers ───────────────────────────────────────────
     var STORE_KEY = 'fc_job_' + cfg.productId;
+    var currentJobId = null;
 
     function getStoredJobId() {
         try { return localStorage.getItem(STORE_KEY) || null; } catch (e) { return null; }
@@ -19,15 +20,18 @@
 
     // ── Save jobId to PHP session via AJAX ────────────────────────────────────
     function saveJobIdToSession(jobId) {
+        if (!jobId) return Promise.resolve();
+
         var body = new URLSearchParams({
             nonce:      cfg.nonce,
             product_id: cfg.productId,
-            job_id:     jobId || '',
+            job_id:     jobId,
         });
-        fetch(cfg.saveJobUrl, {
+        return fetch(cfg.saveJobUrl, {
             method:      'POST',
             credentials: 'same-origin',
             body:        body,
+            keepalive:   true,
         }).catch(function (err) {
             console.warn('[Filecheck OC] Session save failed:', err);
         });
@@ -84,14 +88,20 @@
 
             // Resume previous job if page was refreshed
             var resumeJobId = getStoredJobId();
-            if (resumeJobId) elOpts.jobId = resumeJobId;
+            if (resumeJobId) {
+                currentJobId = resumeJobId;
+                elOpts.jobId = resumeJobId;
+            }
 
             var el = fc.elements.create('intake', elOpts);
             el.mount('#' + slot.id);
 
             el.on('status', function (e) {
-                storeJobId(e.jobId || null);
-                saveJobIdToSession(e.jobId || null);
+                if (!e.jobId) return;
+
+                currentJobId = e.jobId;
+                storeJobId(e.jobId);
+                saveJobIdToSession(e.jobId);
             });
 
             el.on('error', function (err) {
@@ -102,6 +112,7 @@
             var btn = document.getElementById('button-cart') || document.querySelector('.btn-cart');
             if (btn) {
                 btn.addEventListener('click', function () {
+                    saveJobIdToSession(currentJobId || getStoredJobId());
                     storeJobId(null);
                 }, { once: true });
             }

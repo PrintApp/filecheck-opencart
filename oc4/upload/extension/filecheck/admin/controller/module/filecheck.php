@@ -15,13 +15,14 @@ class Filecheck extends \Opencart\System\Engine\Controller {
         $this->load->model($this->route);
         $this->load->model('setting/event');
 
-        // Self-heal event registrations if any are missing, inactive, or having obsolete slash action (OC4 requires dot separation)
+        // Self-heal event registrations if any are missing, inactive, or use obsolete OC4 route separators
         $expected_events = [
             'filecheck_add_product',
             'filecheck_edit_product',
             'filecheck_order_status',
             'filecheck_footer',
             'filecheck_order_add',
+            'filecheck_order_edit',
             'filecheck_admin_product_form',
             'filecheck_admin_order_info'
         ];
@@ -32,7 +33,7 @@ class Filecheck extends \Opencart\System\Engine\Controller {
                 $need_reinstall = true;
                 break;
             }
-            // Check that model triggers in OpenCart 4 use dot notation before the method name
+            // Model triggers in OC4 use dot-separated method names: e.g. path/to/model.method/after
             if (strpos($event['trigger'] ?? '', 'model/') !== false && strpos($event['trigger'] ?? '', '.') === false) {
                 $need_reinstall = true;
                 break;
@@ -306,6 +307,7 @@ class Filecheck extends \Opencart\System\Engine\Controller {
             'filecheck_order_status',
             'filecheck_footer',
             'filecheck_order_add',
+            'filecheck_order_edit',
             'filecheck_admin_product_form',
             'filecheck_admin_order_info',
         ] as $code) {
@@ -353,6 +355,14 @@ class Filecheck extends \Opencart\System\Engine\Controller {
             'sort_order'  => 0,
         ]);
         $this->model_setting_event->addEvent([
+            'code'        => 'filecheck_order_edit',
+            'description' => 'Filecheck Save order job mappings after order edit',
+            'trigger'     => 'catalog/model/checkout/order.editOrder/after',
+            'action'      => 'extension/filecheck/module/filecheck.eventOrderEdit',
+            'status'      => true,
+            'sort_order'  => 0,
+        ]);
+        $this->model_setting_event->addEvent([
             'code'        => 'filecheck_admin_product_form',
             'description' => 'Filecheck Inject product edit configurations tab',
             'trigger'     => 'admin/view/catalog/product_form/after',
@@ -378,6 +388,7 @@ class Filecheck extends \Opencart\System\Engine\Controller {
             'filecheck_order_status',
             'filecheck_footer',
             'filecheck_order_add',
+            'filecheck_order_edit',
             'filecheck_admin_product_form',
             'filecheck_admin_order_info',
         ] as $code) {
@@ -485,20 +496,30 @@ class Filecheck extends \Opencart\System\Engine\Controller {
     // ── Event: Inject Job Panel on the admin order detail page ──────────────────────────
 
     public function eventAdminOrderInfo(string &$route, array &$args, string &$output): void {
-        $order_id = (int)($this->request->get['order_id'] ?? 0);
+        $order_id = (int)($args['order_id'] ?? ($this->request->get['order_id'] ?? 0));
         if (!$order_id) return;
 
         $data = [
             'order_id' => $order_id,
             'ajax_url' => $this->url->link(
                 'extension/filecheck/module/filecheck.ajaxGetJobDetails',
-                'user_token=' . $this->session->data['user_token'] ?? '',
+                'user_token=' . ($this->session->data['user_token'] ?? ''),
                 true
             ),
         ];
 
         $panel  = $this->load->view('extension/filecheck/module/filecheck_order', $data);
         $inject = $panel . "\n" . '<script src="../extension/filecheck/admin/view/javascript/filecheck/admin.js"></script>' . "\n";
+
+        $history_header_pos = strpos($output, '<div class="card-header"><i class="fa-solid fa-comment"></i>');
+        if ($history_header_pos !== false) {
+            $before_history = substr($output, 0, $history_header_pos);
+            $history_card_pos = strrpos($before_history, '<div class="card mb-3">');
+            if ($history_card_pos !== false) {
+                $output = substr($output, 0, $history_card_pos) . $inject . substr($output, $history_card_pos);
+                return;
+            }
+        }
 
         if (strpos($output, '</body>') !== false) {
             $output = str_replace('</body>', $inject . '</body>', $output);

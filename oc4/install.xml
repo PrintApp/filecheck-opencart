@@ -22,7 +22,7 @@
             <search><![CDATA[id="tab-report"]]></search>
             <add position="before"><![CDATA[<div id="tab-filecheck" class="tab-pane">
   <div id="fc-product-tab"
-       data-load="index.php?route=extension/filecheck/module/filecheck/productTab&user_token={{ user_token }}&product_id={{ product_id ?? 0 }}">
+         data-load="index.php?route=extension/filecheck/module/filecheck.productTab&user_token={{ user_token }}&product_id={{ product_id ?? 0 }}">
     <div style="padding:20px;color:#aaa;font-size:13px;">Loading Filecheck settings&hellip;</div>
   </div>
 </div>
@@ -36,7 +36,7 @@
     <file name="admin/view/template/catalog/product_form.twig">
         <operation>
             <search><![CDATA[</body>]]></search>
-            <add position="before"><![CDATA[<script src="extension/filecheck/admin/view/javascript/filecheck/admin.js"></script>
+            <add position="before"><![CDATA[<script src="../extension/filecheck/admin/view/javascript/filecheck/admin.js"></script>
 ]]></add>
         </operation>
     </file>
@@ -48,7 +48,7 @@
         <operation>
             <search><![CDATA[</body>]]></search>
             <add position="before"><![CDATA[{% if filecheck_order_panel is defined %}{{ filecheck_order_panel | raw }}{% endif %}
-<script src="extension/filecheck/admin/view/javascript/filecheck/admin.js"></script>
+<script src="../extension/filecheck/admin/view/javascript/filecheck/admin.js"></script>
 ]]></add>
         </operation>
     </file>

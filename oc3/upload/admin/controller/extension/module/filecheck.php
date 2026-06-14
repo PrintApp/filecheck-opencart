@@ -10,6 +10,28 @@ class ControllerExtensionModuleFilecheck extends Controller {
         $this->load->language('extension/module/filecheck');
         $this->load->model('extension/module/filecheck');
         $this->load->model('setting/setting');
+        $this->load->model('setting/event');
+
+        // Self-heal event registrations if any are missing or inactive
+        $expected_events = [
+            'filecheck_add_product',
+            'filecheck_edit_product',
+            'filecheck_order_status',
+            'filecheck_order_info',
+            'filecheck_footer',
+            'filecheck_order_add'
+        ];
+        $need_reinstall = false;
+        foreach ($expected_events as $code) {
+            $event = $this->model_setting_event->getEventByCode($code);
+            if (empty($event) || !$event['status']) {
+                $need_reinstall = true;
+                break;
+            }
+        }
+        if ($need_reinstall) {
+            $this->install();
+        }
 
         $this->document->setTitle($this->language->get('heading_title'));
         $this->document->addScript('admin/view/javascript/filecheck/admin.js');
@@ -180,14 +202,19 @@ class ControllerExtensionModuleFilecheck extends Controller {
 
     public function eventAddProduct(&$route, &$args, &$output) {
         // $output = new product_id (return value of addProduct)
-        $product_id   = (int)$output;
+        $product_id = (int)$output;
         if (!$product_id) return;
+
+        $data = isset($args[0]) ? $args[0] : [];
+        if (!isset($this->request->post['filecheck_product_id_loaded']) && !isset($data['filecheck_product_id_loaded'])) {
+            return; // Tab was never loaded/rendered, do not overwrite settings
+        }
+
+        $workflow_id  = isset($this->request->post['filecheck_workflow_id'])  ? $this->request->post['filecheck_workflow_id']  : (isset($data['filecheck_workflow_id']) ? $data['filecheck_workflow_id'] : 'none');
+        $connector_id = isset($this->request->post['filecheck_connector_id']) ? $this->request->post['filecheck_connector_id'] : (isset($data['filecheck_connector_id']) ? $data['filecheck_connector_id'] : '');
+
         $this->load->model('extension/module/filecheck');
-        $this->model_extension_module_filecheck->saveProductSettings(
-            $product_id,
-            isset($this->request->post['filecheck_workflow_id'])  ? $this->request->post['filecheck_workflow_id']  : 'none',
-            isset($this->request->post['filecheck_connector_id']) ? $this->request->post['filecheck_connector_id'] : ''
-        );
+        $this->model_extension_module_filecheck->saveProductSettings($product_id, $workflow_id, $connector_id);
     }
 
     // ── Event: save product settings after product edit ───────────────────────
@@ -196,12 +223,17 @@ class ControllerExtensionModuleFilecheck extends Controller {
         // $args[0] = product_id (first argument of editProduct)
         $product_id = isset($args[0]) ? (int)$args[0] : 0;
         if (!$product_id) return;
+
+        $data = isset($args[1]) ? $args[1] : [];
+        if (!isset($this->request->post['filecheck_product_id_loaded']) && !isset($data['filecheck_product_id_loaded'])) {
+            return; // Tab was never loaded/rendered, do not overwrite settings
+        }
+
+        $workflow_id  = isset($this->request->post['filecheck_workflow_id'])  ? $this->request->post['filecheck_workflow_id']  : (isset($data['filecheck_workflow_id']) ? $data['filecheck_workflow_id'] : 'none');
+        $connector_id = isset($this->request->post['filecheck_connector_id']) ? $this->request->post['filecheck_connector_id'] : (isset($data['filecheck_connector_id']) ? $data['filecheck_connector_id'] : '');
+
         $this->load->model('extension/module/filecheck');
-        $this->model_extension_module_filecheck->saveProductSettings(
-            $product_id,
-            isset($this->request->post['filecheck_workflow_id'])  ? $this->request->post['filecheck_workflow_id']  : 'none',
-            isset($this->request->post['filecheck_connector_id']) ? $this->request->post['filecheck_connector_id'] : ''
-        );
+        $this->model_extension_module_filecheck->saveProductSettings($product_id, $workflow_id, $connector_id);
     }
 
     // ── Event: sync order status change to Filecheck API (admin) ─────────────

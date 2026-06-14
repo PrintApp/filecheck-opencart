@@ -38,7 +38,7 @@ class Filecheck extends \Opencart\System\Engine\Controller {
         if (empty($workflow_id)) return;
 
         $nonce        = md5(session_id() . 'fc_save_job');
-        $save_job_url = $this->url->link($this->route . '/saveJob');
+        $save_job_url = $this->url->link($this->route . '.saveJob');
 
         $config = [
             'productId'      => $product_id,
@@ -52,7 +52,7 @@ class Filecheck extends \Opencart\System\Engine\Controller {
 
         $inject  = '<script>window.FILECHECK_OC_CONFIG = ' . json_encode($config) . ';</script>' . "\n";
         $inject .= '<script async src="https://cdn.filecheck.io/element/' . rawurlencode($pk) . '/filecheck.js"></script>' . "\n";
-        $inject .= '<script src="catalog/view/javascript/filecheck/frontend.js"></script>' . "\n";
+        $inject .= '<script src="extension/filecheck/catalog/view/javascript/filecheck/frontend.js"></script>' . "\n";
 
         $output = str_replace('</body>', $inject . '</body>', $output);
     }

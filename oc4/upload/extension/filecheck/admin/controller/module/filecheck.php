@@ -13,9 +13,37 @@ class Filecheck extends \Opencart\System\Engine\Controller {
         $this->load->language($this->route);
         $this->load->model('setting/setting');
         $this->load->model($this->route);
+        $this->load->model('setting/event');
+
+        // Self-heal event registrations if any are missing, inactive, or having obsolete slash action (OC4 requires dot separation)
+        $expected_events = [
+            'filecheck_add_product',
+            'filecheck_edit_product',
+            'filecheck_order_status',
+            'filecheck_footer',
+            'filecheck_order_add',
+            'filecheck_admin_product_form',
+            'filecheck_admin_order_info'
+        ];
+        $need_reinstall = false;
+        foreach ($expected_events as $code) {
+            $event = $this->model_setting_event->getEventByCode($code);
+            if (empty($event) || !$event['status'] || strpos($event['action'] ?? '', '.') === false) {
+                $need_reinstall = true;
+                break;
+            }
+            // Check that model triggers in OpenCart 4 use dot notation before the method name
+            if (strpos($event['trigger'] ?? '', 'model/') !== false && strpos($event['trigger'] ?? '', '.') === false) {
+                $need_reinstall = true;
+                break;
+            }
+        }
+        if ($need_reinstall) {
+            $this->install();
+        }
 
         $this->document->setTitle($this->language->get('heading_title'));
-        $this->document->addScript('admin/view/javascript/filecheck/admin.js');
+        $this->document->addScript('../extension/filecheck/admin/view/javascript/filecheck/admin.js');
 
         if ($this->request->server['REQUEST_METHOD'] === 'POST' && $this->validate()) {
             $this->model_setting_setting->editSetting($this->code, $this->request->post);
@@ -55,7 +83,7 @@ class Filecheck extends \Opencart\System\Engine\Controller {
 
         $data['action']   = $this->url->link($this->route, 'user_token=' . $this->session->data['user_token'], true);
         $data['cancel']   = $this->url->link('marketplace/extension', 'user_token=' . $this->session->data['user_token'] . '&type=module', true);
-        $data['ajax_url'] = $this->url->link($this->route . '/ajaxTestConnection', 'user_token=' . $this->session->data['user_token'], true);
+        $data['ajax_url'] = $this->url->link($this->route . '.ajaxTestConnection', 'user_token=' . $this->session->data['user_token'], true);
 
         foreach (['publishable_key', 'secret_key', 'agent_id', 'api_url', 'default_workflow_id', 'status'] as $key) {
             $full_key        = $this->code . '_' . $key;
@@ -183,27 +211,45 @@ class Filecheck extends \Opencart\System\Engine\Controller {
     public function eventAddProduct(string &$route, array &$args, mixed &$output): void {
         $product_id = (int)$output;
         if (!$product_id) return;
+
+        $data = $args[0] ?? [];
+        if (!isset($this->request->post['filecheck_product_id_loaded']) && !isset($data['filecheck_product_id_loaded'])) {
+            return; // Tab was never loaded/rendered, do not overwrite settings
+        }
+
+        $workflow_id  = $this->request->post['filecheck_workflow_id']  ?? $data['filecheck_workflow_id']  ?? 'none';
+        $connector_id = $this->request->post['filecheck_connector_id'] ?? $data['filecheck_connector_id'] ?? '';
+
         $this->load->model($this->route);
         $model_key = 'model_' . str_replace('/', '_', $this->route);
-        $this->$model_key->saveProductSettings(
-            $product_id,
-            $this->request->post['filecheck_workflow_id']  ?? 'none',
-            $this->request->post['filecheck_connector_id'] ?? ''
-        );
+        $this->$model_key->saveProductSettings($product_id, $workflow_id, $connector_id);
     }
 
     // ── Event: save product settings after editProduct ────────────────────────
 
     public function eventEditProduct(string &$route, array &$args, mixed &$output): void {
         $product_id = (int)($args[0] ?? 0);
+        
+        // Debug logging to a custom file
+        $log_data = date('Y-m-d H:i:s') . " - eventEditProduct called for product_id: " . $product_id . "\n";
+        $log_data .= "Route: " . $route . "\n";
+        $log_data .= "Args: " . json_encode($args) . "\n";
+        $log_data .= "POST: " . json_encode($this->request->post) . "\n\n";
+        file_put_contents(__DIR__ . '/filecheck_debug.log', $log_data, FILE_APPEND);
+
         if (!$product_id) return;
+
+        $data = $args[1] ?? [];
+        if (!isset($this->request->post['filecheck_product_id_loaded']) && !isset($data['filecheck_product_id_loaded'])) {
+            return; // Tab was never loaded/rendered, do not overwrite settings
+        }
+
+        $workflow_id  = $this->request->post['filecheck_workflow_id']  ?? $data['filecheck_workflow_id']  ?? 'none';
+        $connector_id = $this->request->post['filecheck_connector_id'] ?? $data['filecheck_connector_id'] ?? '';
+
         $this->load->model($this->route);
         $model_key = 'model_' . str_replace('/', '_', $this->route);
-        $this->$model_key->saveProductSettings(
-            $product_id,
-            $this->request->post['filecheck_workflow_id']  ?? 'none',
-            $this->request->post['filecheck_connector_id'] ?? ''
-        );
+        $this->$model_key->saveProductSettings($product_id, $workflow_id, $connector_id);
     }
 
     // ── Event: sync order status to Filecheck + trigger file download ─────────
@@ -253,38 +299,72 @@ class Filecheck extends \Opencart\System\Engine\Controller {
         $model_key = 'model_' . str_replace('/', '_', $this->route);
         $this->$model_key->install();
 
+        // Delete existing events first to prevent duplicate registrations
+        foreach ([
+            'filecheck_add_product',
+            'filecheck_edit_product',
+            'filecheck_order_status',
+            'filecheck_footer',
+            'filecheck_order_add',
+            'filecheck_admin_product_form',
+            'filecheck_admin_order_info',
+        ] as $code) {
+            $this->model_setting_event->deleteEventByCode($code);
+        }
+
         $this->model_setting_event->addEvent([
             'code'        => 'filecheck_add_product',
-            'trigger'     => 'admin/model/catalog/product/addProduct/after',
-            'action'      => $this->route . '/eventAddProduct',
+            'description' => 'Filecheck Save settings after addProduct',
+            'trigger'     => 'admin/model/catalog/product.addProduct/after',
+            'action'      => $this->route . '.eventAddProduct',
             'status'      => true,
             'sort_order'  => 0,
         ]);
         $this->model_setting_event->addEvent([
             'code'        => 'filecheck_edit_product',
-            'trigger'     => 'admin/model/catalog/product/editProduct/after',
-            'action'      => $this->route . '/eventEditProduct',
+            'description' => 'Filecheck Save settings after editProduct',
+            'trigger'     => 'admin/model/catalog/product.editProduct/after',
+            'action'      => $this->route . '.eventEditProduct',
             'status'      => true,
             'sort_order'  => 0,
         ]);
         $this->model_setting_event->addEvent([
             'code'        => 'filecheck_order_status',
-            'trigger'     => 'admin/model/sale/order/addHistory/after',
-            'action'      => $this->route . '/eventOrderStatus',
+            'description' => 'Filecheck Sync order status',
+            'trigger'     => 'admin/model/sale/order.addHistory/after',
+            'action'      => $this->route . '.eventOrderStatus',
             'status'      => true,
             'sort_order'  => 0,
         ]);
         $this->model_setting_event->addEvent([
             'code'        => 'filecheck_footer',
+            'description' => 'Filecheck Inject frontend script',
             'trigger'     => 'catalog/view/common/footer/after',
-            'action'      => 'extension/filecheck/module/filecheck/eventInjectFooter',
+            'action'      => 'extension/filecheck/module/filecheck.eventInjectFooter',
             'status'      => true,
             'sort_order'  => 0,
         ]);
         $this->model_setting_event->addEvent([
             'code'        => 'filecheck_order_add',
-            'trigger'     => 'catalog/model/checkout/order/addOrder/after',
-            'action'      => 'extension/filecheck/module/filecheck/eventOrderAdd',
+            'description' => 'Filecheck Save order job mappings',
+            'trigger'     => 'catalog/model/checkout/order.addOrder/after',
+            'action'      => 'extension/filecheck/module/filecheck.eventOrderAdd',
+            'status'      => true,
+            'sort_order'  => 0,
+        ]);
+        $this->model_setting_event->addEvent([
+            'code'        => 'filecheck_admin_product_form',
+            'description' => 'Filecheck Inject product edit configurations tab',
+            'trigger'     => 'admin/view/catalog/product_form/after',
+            'action'      => 'extension/filecheck/module/filecheck.eventAdminProductForm',
+            'status'      => true,
+            'sort_order'  => 0,
+        ]);
+        $this->model_setting_event->addEvent([
+            'code'        => 'filecheck_admin_order_info',
+            'description' => 'Filecheck Inject admin order job summary panel',
+            'trigger'     => 'admin/view/sale/order_info/after',
+            'action'      => 'extension/filecheck/module/filecheck.eventAdminOrderInfo',
             'status'      => true,
             'sort_order'  => 0,
         ]);
@@ -298,6 +378,8 @@ class Filecheck extends \Opencart\System\Engine\Controller {
             'filecheck_order_status',
             'filecheck_footer',
             'filecheck_order_add',
+            'filecheck_admin_product_form',
+            'filecheck_admin_order_info',
         ] as $code) {
             $this->model_setting_event->deleteEventByCode($code);
         }
@@ -349,5 +431,79 @@ class Filecheck extends \Opencart\System\Engine\Controller {
             }
         }
         $this->$model_key->markOrderDownloaded($order_id);
+    }
+
+    // ── Event: Inject Filecheck Tab into admin catalog product edit form ─────────────────
+
+    public function eventAdminProductForm(string &$route, array &$args, string &$output): void {
+        $user_token = $this->session->data['user_token'] ?? '';
+        $product_id = (int)($this->request->get['product_id'] ?? 0);
+        
+        $tab_url = 'index.php?route=extension/filecheck/module/filecheck.productTab&user_token=' . $user_token . '&product_id=' . $product_id;
+        
+        // 1. Inject Tab header link
+        $nav_target = '<a href="#tab-report"';
+        if (strpos($output, $nav_target) !== false) {
+            $tab_nav = '<a href="#tab-filecheck" data-bs-toggle="tab" class="nav-link">Filecheck</a></li><li class="nav-item"><a href="#tab-report"';
+            $output = str_replace($nav_target, $tab_nav, $output);
+        } else {
+            $nav_target = '<a href="#tab-design"';
+            if (strpos($output, $nav_target) !== false) {
+                $tab_nav = '<a href="#tab-filecheck" data-bs-toggle="tab" class="nav-link">Filecheck</a></li><li class="nav-item"><a href="#tab-design"';
+                $output = str_replace($nav_target, $tab_nav, $output);
+            }
+        }
+        
+        // 2. Inject Tab content panel
+        $panel_target = '<div id="tab-report"';
+        if (strpos($output, $panel_target) !== false) {
+            $tab_panel = '<div id="tab-filecheck" class="tab-pane">' . "\n" .
+                         '  <div id="fc-product-tab" data-load="' . $tab_url . '">' . "\n" .
+                         '    <div style="padding:20px;color:#aaa;font-size:13px;">Loading Filecheck settings&hellip;</div>' . "\n" .
+                         '  </div>' . "\n" .
+                         '</div>' . "\n" .
+                         '<div id="tab-report"';
+            $output = str_replace($panel_target, $tab_panel, $output);
+        } else {
+            $panel_target = '<div id="tab-design"';
+            if (strpos($output, $panel_target) !== false) {
+                $tab_panel = '<div id="tab-filecheck" class="tab-pane">' . "\n" .
+                             '  <div id="fc-product-tab" data-load="' . $tab_url . '">' . "\n" .
+                             '    <div style="padding:20px;color:#aaa;font-size:13px;">Loading Filecheck settings&hellip;</div>' . "\n" .
+                             '  </div>' . "\n" .
+                             '</div>' . "\n" .
+                             '<div id="tab-design"';
+                $output = str_replace($panel_target, $tab_panel, $output);
+            }
+        }
+        
+        // 3. Inject JS script
+        $js_script = '<script src="../extension/filecheck/admin/view/javascript/filecheck/admin.js"></script>' . "\n";
+        $output = str_replace('</body>', $js_script . '</body>', $output);
+    }
+
+    // ── Event: Inject Job Panel on the admin order detail page ──────────────────────────
+
+    public function eventAdminOrderInfo(string &$route, array &$args, string &$output): void {
+        $order_id = (int)($this->request->get['order_id'] ?? 0);
+        if (!$order_id) return;
+
+        $data = [
+            'order_id' => $order_id,
+            'ajax_url' => $this->url->link(
+                'extension/filecheck/module/filecheck.ajaxGetJobDetails',
+                'user_token=' . $this->session->data['user_token'] ?? '',
+                true
+            ),
+        ];
+
+        $panel  = $this->load->view('extension/filecheck/module/filecheck_order', $data);
+        $inject = $panel . "\n" . '<script src="../extension/filecheck/admin/view/javascript/filecheck/admin.js"></script>' . "\n";
+
+        if (strpos($output, '</body>') !== false) {
+            $output = str_replace('</body>', $inject . '</body>', $output);
+        } else {
+            $output .= $inject;
+        }
     }
 }

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<modification>
+    <name>Filecheck for OpenCart 3</name>
+    <code>filecheck</code>
+    <version>1.0.0</version>
+    <author>Filecheck</author>
+    <link>https://filecheck.io</link>
+
+    <!--
+        Inject the Filecheck tab into the admin product edit form.
+        The tab content is lazy-loaded via AJAX on first click, so no
+        additional PHP variables need to be injected into the product controller.
+    -->
+    <file name="admin/view/template/catalog/product_form.tpl">
+        <!-- Tab nav link -->
+        <operation>
+            <search><![CDATA[<li><a href="#tab-reward" data-toggle="tab">]]></search>
+            <add position="before"><![CDATA[<li><a href="#tab-filecheck" data-toggle="tab">Filecheck</a></li>
+]]></add>
+        </operation>
+
+        <!-- Tab panel (lazy-loaded) -->
+        <operation>
+            <search><![CDATA[<div id="tab-reward"]]></search>
+            <add position="before"><![CDATA[<div id="tab-filecheck">
+  <div id="fc-product-tab"
+       data-load="index.php?route=extension/module/filecheck/productTab&user_token=<?php echo $user_token; ?>&product_id=<?php echo isset($product_id) ? $product_id : 0; ?>">
+    <div style="padding:20px;color:#aaa;font-size:13px;">Loading Filecheck settings&hellip;</div>
+  </div>
+</div>
+]]></add>
+        </operation>
+    </file>
+
+    <!--
+        Enqueue the admin JS on the product edit page so the tab
+        lazy-loader and order panel are initialised.
+    -->
+    <file name="admin/view/template/catalog/product_form.tpl">
+        <operation>
+            <search><![CDATA[</body>]]></search>
+            <add position="before"><![CDATA[<script src="admin/view/javascript/filecheck/admin.js"></script>
+]]></add>
+        </operation>
+    </file>
+</modification>

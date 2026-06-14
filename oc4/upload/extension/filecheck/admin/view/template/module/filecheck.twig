@@ -1,0 +1,127 @@
+{{ header }}{{ column_left }}
+<div id="content">
+    <div class="page-header">
+        <div class="container-fluid">
+            <div class="float-end">
+                <button type="submit" form="form-filecheck" class="btn btn-primary">
+                    <i class="fa-solid fa-floppy-disk"></i> {{ button_save }}
+                </button>
+                <a href="{{ cancel }}" class="btn btn-light">
+                    <i class="fa-solid fa-reply"></i> {{ button_cancel }}
+                </a>
+            </div>
+            <h1>{{ heading_title }}</h1>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    {% for breadcrumb in breadcrumbs %}
+                        <li class="breadcrumb-item"><a href="{{ breadcrumb.href }}">{{ breadcrumb.text }}</a></li>
+                    {% endfor %}
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+        {% if error_warning %}
+            <div class="alert alert-danger alert-dismissible">
+                <i class="fa-solid fa-circle-exclamation"></i> {{ error_warning }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        {% endif %}
+        {% if success %}
+            <div class="alert alert-success alert-dismissible">
+                <i class="fa-solid fa-circle-check"></i> {{ success }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        {% endif %}
+
+        <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title"><i class="fa-solid fa-pencil"></i> {{ text_edit }}</h3></div>
+            <div class="card-body">
+                <form action="{{ action }}" method="post" id="form-filecheck" class="row g-3">
+
+                    <fieldset class="col-12">
+                        <legend>API Credentials</legend>
+
+                        <div class="row mb-3">
+                            <label class="col-sm-2 col-form-label">{{ entry_status }}</label>
+                            <div class="col-sm-10">
+                                <select name="module_filecheck_status" class="form-select">
+                                    <option value="1" {% if module_filecheck_status == '1' %}selected{% endif %}>{{ text_enabled }}</option>
+                                    <option value="0" {% if module_filecheck_status != '1' %}selected{% endif %}>{{ text_disabled }}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <label class="col-sm-2 col-form-label">{{ entry_pk }}</label>
+                            <div class="col-sm-10">
+                                <input type="text" name="module_filecheck_publishable_key" value="{{ module_filecheck_publishable_key }}" class="form-control" placeholder="pk_live_...">
+                                <div class="form-text">{{ help_pk }}</div>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <label class="col-sm-2 col-form-label">{{ entry_sk }}</label>
+                            <div class="col-sm-10">
+                                <input type="password" name="module_filecheck_secret_key" value="{{ module_filecheck_secret_key }}" class="form-control" placeholder="sk_live_...">
+                                <div class="form-text">{{ help_sk }}</div>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <label class="col-sm-2 col-form-label">{{ entry_agent_id }}</label>
+                            <div class="col-sm-10">
+                                <input type="text" name="module_filecheck_agent_id" value="{{ module_filecheck_agent_id }}" class="form-control" placeholder="agt_...">
+                                <div class="form-text">{{ help_agent_id }}</div>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <label class="col-sm-2 col-form-label">{{ entry_api_url }}</label>
+                            <div class="col-sm-10">
+                                <input type="text" name="module_filecheck_api_url" value="{{ module_filecheck_api_url }}" class="form-control" placeholder="https://api.filecheck.io">
+                                <div class="form-text">{{ help_api_url }}</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="col-12">
+                        <legend>Global Configuration</legend>
+
+                        <div class="row mb-3">
+                            <label class="col-sm-2 col-form-label">{{ entry_workflow }}</label>
+                            <div class="col-sm-10">
+                                <select name="module_filecheck_default_workflow_id" class="form-select" style="max-width:400px;">
+                                    <option value="">{{ text_select }}</option>
+                                    {% for wf in workflows %}
+                                        {% if wf.id is defined and wf.title is defined %}
+                                            <option value="{{ wf.id }}" {% if module_filecheck_default_workflow_id == wf.id %}selected{% endif %}>
+                                                {{ wf.title }} ({{ wf.id }})
+                                            </option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text">{{ help_workflow }}</div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                </form>
+            </div>
+        </div>
+
+        <!-- Connection Test -->
+        <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title"><i class="fa-solid fa-plug"></i> {{ text_connection_test }}</h3></div>
+            <div class="card-body">
+                <p>Test that your API keys can communicate with the Filecheck servers.</p>
+                <button type="button" id="fc-test-connection" class="btn btn-info" data-ajax="{{ ajax_url }}">
+                    <i class="fa-solid fa-arrows-rotate"></i> {{ button_test }}
+                </button>
+                <span id="fc-connection-result" style="margin-left:12px;font-weight:500;"></span>
+            </div>
+        </div>
+    </div>
+</div>
+{{ footer }}

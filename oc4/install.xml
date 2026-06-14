@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<modification>
+    <name>Filecheck for OpenCart 4</name>
+    <code>filecheck</code>
+    <version>1.0.0</version>
+    <author>Filecheck</author>
+    <link>https://filecheck.io</link>
+
+    <!--
+        Inject the Filecheck tab into the admin product edit form (OC4 Twig).
+        The tab content is lazy-loaded via AJAX on first click.
+    -->
+    <file name="admin/view/template/catalog/product_form.twig">
+        <!-- Tab nav link -->
+        <operation>
+            <search><![CDATA[<a href="#tab-reward"]]></search>
+            <add position="before"><![CDATA[<a href="#tab-filecheck" class="nav-link">Filecheck</a>
+]]></add>
+        </operation>
+
+        <!-- Tab panel (lazy-loaded) -->
+        <operation>
+            <search><![CDATA[<div id="tab-reward"]]></search>
+            <add position="before"><![CDATA[<div id="tab-filecheck" class="tab-pane">
+  <div id="fc-product-tab"
+       data-load="index.php?route=extension/filecheck/module/filecheck/productTab&user_token={{ user_token }}&product_id={{ product_id ?? 0 }}">
+    <div style="padding:20px;color:#aaa;font-size:13px;">Loading Filecheck settings&hellip;</div>
+  </div>
+</div>
+]]></add>
+        </operation>
+    </file>
+
+    <!--
+        Enqueue the admin JS on the product edit page.
+    -->
+    <file name="admin/view/template/catalog/product_form.twig">
+        <operation>
+            <search><![CDATA[</body>]]></search>
+            <add position="before"><![CDATA[<script src="admin/view/javascript/filecheck/admin.js"></script>
+]]></add>
+        </operation>
+    </file>
+
+    <!--
+        Inject Filecheck order panel on OC4 order view.
+    -->
+    <file name="admin/view/template/sale/order_info.twig">
+        <operation>
+            <search><![CDATA[</body>]]></search>
+            <add position="before"><![CDATA[{% if filecheck_order_panel is defined %}{{ filecheck_order_panel | raw }}{% endif %}
+<script src="admin/view/javascript/filecheck/admin.js"></script>
+]]></add>
+        </operation>
+    </file>
+</modification>
